@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#101a1b" />
+  <meta name="description" content="سامانه ثبت و گزارش تولید گلفام" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>Golfam Production</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">G</div><div><b>Golfam Production</b><small>سامانه مدیریت تولید</small></div></div>
+      <div class="top-actions"><span id="connection" class="status offline">حالت آزمایشی</span><button id="logoutBtn" class="ghost hidden">خروج</button></div>
+    </header>
+    <main>
+      <section id="setupNotice" class="notice hidden">
+        <b>اتصال پایگاه داده هنوز تنظیم نشده است.</b>
+        <p>برای استفاده چندگوشی، آدرس پروژه و کلید عمومی Supabase را در فایل <code>config.js</code> وارد کنید. تا آن زمان برنامه در حالت آزمایشی و محلی اجرا می‌شود.</p>
+      </section>
+
+      <section id="authView" class="auth-wrap hidden">
+        <div class="hero">
+          <span class="eyebrow">GOLFAM • PRODUCTION</span>
+          <h1>مدیریت هوشمند تولید</h1>
+          <p>ثبت تولید، مصرف مواد اولیه و توقفات دستگاه‌ها در یک سامانه مشترک.</p>
+        </div>
+        <div class="panel auth-panel">
+          <div class="tabs"><button class="tab active" data-auth="login">ورود کاربران</button><button class="tab" data-auth="signup">ساخت حساب اپراتور</button></div>
+          <form id="authForm">
+            <label>ایمیل<input id="email" type="email" required placeholder="name@example.com" autocomplete="username"></label>
+            <label>رمز عبور<input id="password" type="password" required minlength="6" placeholder="حداقل ۶ کاراکتر" autocomplete="current-password"></label>
+            <button class="primary full" type="submit" id="authSubmit">ورود</button>
+            <p class="muted small" id="authHint">حساب کاربری را مدیر سامانه برای شما ایجاد می‌کند.</p>
+          </form>
+        </div>
+      </section>
+
+      <section id="appView" class="hidden">
+        <div class="welcome-row">
+          <div><span class="eyebrow">داشبورد</span><h1 id="welcomeTitle">سلام، خوش آمدید</h1><p id="todayText" class="muted"></p></div>
+          <div class="avatar" id="userAvatar">گ</div>
+        </div>
+        <nav id="adminNav" class="nav hidden">
+          <button class="nav-btn active" data-page="overview">نمای کلی</button>
+          <button class="nav-btn" data-page="reports">گزارش روزانه</button>
+          <button class="nav-btn" data-page="devices">دستگاه‌ها</button>
+          <button class="nav-btn" data-page="catalog">محصولات و مواد</button>
+          <button class="nav-btn" data-page="users">کاربران</button>
+        </nav>
+        <nav id="operatorNav" class="nav hidden">
+          <button class="nav-btn active" data-page="operator">ثبت اطلاعات دستگاه</button>
+        </nav>
+
+        <section id="page-overview" class="page">
+          <div class="stats">
+            <article class="stat-card"><span>گزارش‌های امروز</span><b id="statReports">۰</b><small>گزارش ایجادشده</small></article>
+            <article class="stat-card"><span>دستگاه‌های فعال</span><b id="statDevices">۰</b><small>دستگاه تعریف‌شده</small></article>
+            <article class="stat-card"><span>تولید ثبت‌شده</span><b id="statProduction">۰</b><small>کیلوگرم</small></article>
+          </div>
+          <div class="section-head"><div><h2>آخرین گزارش‌ها</h2><p class="muted">وضعیت ثبت اطلاعات تولید</p></div><button class="secondary" data-goto="reports">مشاهده همه</button></div>
+          <div id="recentReports" class="list-card empty">هنوز گزارشی ثبت نشده است.</div>
+        </section>
+
+        <section id="page-reports" class="page hidden">
+          <div class="section-head"><div><h2>گزارش روزانه تولید</h2><p class="muted">مدیر ابتدا گزارش روز را ایجاد می‌کند.</p></div></div>
+          <form id="reportForm" class="panel form-grid">
+            <label>تاریخ گزارش (شمسی)<input id="reportDate" required placeholder="۱۴۰۵/۰۸/۲۲"></label>
+            <label>شیفت<select id="reportShift"><option value="روز">روز</option><option value="شب">شب</option><option value="هر دو">هر دو</option></select></label>
+            <label class="wide">توضیحات<textarea id="reportNote" rows="2" placeholder="توضیحات اختیاری"></textarea></label>
+            <button class="primary" type="submit">ایجاد گزارش روزانه</button>
+          </form>
+          <div class="section-head"><h2>گزارش‌های ایجادشده</h2></div>
+          <div id="reportsList" class="list-card empty">گزارشی وجود ندارد.</div>
+        </section>
+
+        <section id="page-devices" class="page hidden">
+          <div class="section-head"><div><h2>مدیریت دستگاه‌ها</h2><p class="muted">تعریف دستگاه و اختصاص اپراتور</p></div></div>
+          <form id="deviceForm" class="panel form-grid">
+            <label>نام دستگاه<input id="deviceName" required placeholder="مثلاً پرس شماره ۱"></label>
+            <label>اپراتور مسئول<select id="deviceOperator"><option value="">بدون اپراتور</option></select></label>
+            <button class="primary" type="submit">افزودن دستگاه</button>
+          </form>
+          <div id="devicesList" class="list-card empty">دستگاهی تعریف نشده است.</div>
+        </section>
+
+        <section id="page-catalog" class="page hidden">
+          <div class="section-head"><div><h2>مدیریت محصولات و مواد اولیه</h2><p class="muted">موارد این فهرست در فرم اپراتور قابل انتخاب هستند.</p></div></div>
+          <div class="two-col">
+            <form id="productForm" class="panel form-grid">
+              <h3 class="wide">افزودن محصول</h3>
+              <label class="wide">نام محصول<input id="productName" required placeholder="کنسانتره سیب"></label>
+              <label>واحد پیش‌فرض<input id="productUnit" value="بشکه" required></label>
+              <label>وزن هر واحد (کیلوگرم)<input id="productWeight" type="number" min="0" step="0.001" value="260" required></label>
+              <button class="primary wide" type="submit">ثبت محصول</button>
+            </form>
+            <form id="materialForm" class="panel form-grid">
+              <h3 class="wide">افزودن ماده اولیه</h3>
+              <label class="wide">نام ماده<input id="materialName" required placeholder="سیب"></label>
+              <label class="wide">واحد پیش‌فرض<input id="materialUnit" value="کیلوگرم" required></label>
+              <button class="primary wide" type="submit">ثبت ماده اولیه</button>
+            </form>
+          </div>
+          <div class="two-col"><div><h3>محصولات</h3><div id="productsList" class="list-card empty">محصولی ثبت نشده است.</div></div><div><h3>مواد اولیه</h3><div id="materialsList" class="list-card empty">ماده‌ای ثبت نشده است.</div></div></div>
+        </section>
+
+        <section id="page-users" class="page hidden">
+          <div class="section-head"><div><h2>مدیریت کاربران</h2><p class="muted">حساب کاربران از بخش احراز هویت Supabase ساخته می‌شود؛ سپس نقش آن‌ها را تعیین کنید.</p></div></div>
+          <div class="notice"><b>راه‌اندازی امن:</b> کاربر ابتدا با ایمیل ثبت‌نام می‌کند. مدیر از این صفحه می‌تواند نقش حساب را به اپراتور یا مدیر تغییر دهد. اولین مدیر از طریق دستور SQL راه‌اندازی تعیین می‌شود.</div>
+          <div id="usersList" class="list-card empty">برای مشاهده کاربران، اتصال Supabase را فعال کنید.</div>
+        </section>
+
+        <section id="page-operator" class="page hidden">
+          <div class="assigned-device panel">
+            <span class="eyebrow">دستگاه اختصاصی من</span><h2 id="assignedDevice">هنوز دستگاهی به حساب شما اختصاص داده نشده است.</h2>
+            <p class="muted" id="activeReportLabel">گزارش فعال: —</p>
+          </div>
+          <div id="operatorNoReport" class="notice hidden">هنوز مدیر برای امروز گزارشی ایجاد نکرده است.</div>
+          <div id="operatorForms" class="hidden">
+            <form id="productionForm" class="panel form-grid">
+              <h2 class="wide">ثبت تولید</h2>
+              <label class="wide">نوع محصول<select id="productionProduct" required></select></label>
+              <label>مقدار تولید<input id="productionQty" type="number" min="0.001" step="0.001" required placeholder="مثلاً ۴۸"></label>
+              <label>واحد<input id="productionUnit" required placeholder="بشکه"></label>
+              <label>وزن هر واحد (کیلوگرم)<input id="productionWeight" type="number" min="0" step="0.001" required></label>
+              <label>شماره بچ<input id="batchNumber" required placeholder="مثلاً B-001"></label>
+              <div class="calc-box wide"><span>وزن کل تولید</span><b id="totalWeight">۰ کیلوگرم</b></div>
+              <button class="primary wide" type="submit">ثبت تولید</button>
+            </form>
+            <form id="usageForm" class="panel form-grid">
+              <h2 class="wide">مصرف مواد اولیه</h2>
+              <label>ماده اولیه<select id="usageMaterial" required></select></label>
+              <label>مقدار مصرف<input id="usageQty" type="number" min="0.001" step="0.001" required></label>
+              <label>واحد مصرف<input id="usageUnit" required></label>
+              <label>شماره بچ مرتبط<input id="usageBatch" placeholder="شماره بچ تولید"></label>
+              <button class="primary wide" type="submit">ثبت مصرف</button>
+            </form>
+            <form id="downtimeForm" class="panel form-grid">
+              <h2 class="wide">ثبت توقف دستگاه</h2>
+              <label>زمان شروع<input id="stopStart" type="time" required></label>
+              <label>زمان پایان<input id="stopEnd" type="time" required></label>
+              <label class="wide">علت توقف<textarea id="stopReason" rows="2" required placeholder="مثلاً خرابی پمپ"></textarea></label>
+              <div class="calc-box wide"><span>مدت توقف</span><b id="stopDuration">—</b></div>
+              <button class="primary wide" type="submit">ثبت توقف</button>
+            </form>
+          </div>
+          <div class="section-head"><h2>سوابق ثبت‌شده دستگاه</h2></div>
+          <div id="operatorEntries" class="list-card empty">هنوز اطلاعاتی ثبت نشده است.</div>
+        </section>
+      </section>
+      <div id="toast" class="toast hidden"></div>
+    </main>
+    <footer>Golfam Production <span>•</span> نسخه اولیه</footer>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
