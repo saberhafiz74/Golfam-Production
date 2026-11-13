@@ -19,6 +19,39 @@ function getReports(){return local.reports;}
 function getDevices(){return local.devices;}
 function getProducts(){return local.products;}
 function getMaterials(){return local.materials;}
+let cloudUsers = [], cloudAssignments = [];
+async function cloudError(error){ if(error){ console.error(error); toast(error.message || "خطا در ارتباط با پایگاه داده"); return true; } return false; }
+async function refreshCloud(){
+  if(!configured || !user) return;
+  const tables = ["devices","products","materials","daily_reports"];
+  const results = await Promise.all(tables.map(t=>supabase.from(t).select("*").order("created_at",{ascending:true})));
+  for(let i=0;i<results.length;i++){ if(await cloudError(results[i].error)) return; }
+  local.devices = results[0].data.map(x=>({...x,operator:"",operatorId:""}));
+  local.products = results[1].data.map(x=>({id:x.id,name:x.name,unit:x.default_unit,weight:Number(x.default_unit_weight)}));
+  local.materials = results[2].data.map(x=>({id:x.id,name:x.name,unit:x.default_unit}));
+  local.reports = results[3].data.map(x=>({id:x.id,date:x.report_date,shift:x.shift,note:x.note,closed:x.is_closed}));
+  if(profile?.role==="admin"){
+    const [u,a] = await Promise.all([
+      supabase.from("profiles").select("id,display_name,role,created_at").order("created_at",{ascending:true}),
+      supabase.from("device_assignments").select("id,device_id,user_id,shift,active")
+    ]);
+    if(await cloudError(u.error) || await cloudError(a.error)) return;
+    cloudUsers=u.data||[]; cloudAssignments=a.data||[];
+    for(const d of local.devices){
+      const as=cloudAssignments.find(x=>x.device_id===d.id && x.active);
+      const op=cloudUsers.find(x=>x.id===as?.user_id);
+      d.operator=op?.display_name||"بدون اپراتور"; d.operatorId=op?.id||"";
+    }
+  } else {
+    const {data,error}=await supabase.from("device_assignments").select("device_id,shift").eq("user_id",user.id).eq("active",true);
+    if(await cloudError(error)) return;
+    const ids=new Set((data||[]).map(x=>x.device_id)); local.devices=local.devices.filter(d=>ids.has(d.id));
+    const {data:reports,error:re}=await supabase.from("report_devices").select("report_id,device_id").in("device_id",[...ids]);
+    if(await cloudError(re)) return;
+    const rids=new Set((reports||[]).map(x=>x.report_id)); local.reports=local.reports.filter(r=>rids.has(r.id));
+  }
+  render();
+}
 function setOptions(el,items,placeholder){el.innerHTML=`<option value="">${placeholder}</option>`+items.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");}
 function render(){
   $("todayText").textContent=dateText();
@@ -35,8 +68,8 @@ function render(){
     $("devicesList").innerHTML=getDevices().map(d=>`<div class="list-row"><div><b>${esc(d.name)}</b><small>${esc(d.operator||"بدون اپراتور")}</small></div><span class="pill">فعال</span></div>`).join("")||"دستگاهی تعریف نشده است.";
     $("productsList").innerHTML=getProducts().map(p=>`<div class="list-row"><div><b>${esc(p.name)}</b><small>${esc(p.unit)} • ${fa(p.weight)} کیلوگرم</small></div></div>`).join("")||"محصولی ثبت نشده است.";
     $("materialsList").innerHTML=getMaterials().map(m=>`<div class="list-row"><div><b>${esc(m.name)}</b><small>واحد: ${esc(m.unit)}</small></div></div>`).join("")||"ماده‌ای ثبت نشده است.";
-    $("deviceOperator").innerHTML='<option value="">بدون اپراتور</option>';
-    $("usersList").innerHTML=configured?"برای مدیریت نقش کاربران از پنل Supabase و دستورالعمل راه‌اندازی استفاده کنید.":"در حالت آزمایشی، مدیریت کاربران واقعی فعال نیست.";
+    $("deviceOperator").innerHTML='<option value="">بدون اپراتور</option>'+cloudUsers.map(x=>`<option value="${esc(x.id)}">${esc(x.display_name||x.id)}</option>`).join("");
+    $("usersList").innerHTML=cloudUsers.map(x=>`<div class="list-row"><div><b>${esc(x.display_name||"بدون نام")}</b><small>${esc(x.id)}</small></div><select data-role-user="${x.id}"><option value="operator" ${x.role==="operator"?"selected":""}>اپراتور</option><option value="admin" ${x.role==="admin"?"selected":""}>مدیر</option></select></div>`).join("")||"کاربری ثبت‌نام نکرده است.";
   } else {
     const device=getDevices().find(d=>d.operatorId===user?.id)||getDevices()[0];
     $("assignedDevice").textContent=device?.name||"هنوز دستگاهی به حساب شما اختصاص داده نشده است.";
@@ -59,10 +92,11 @@ function setupApp(){
   document.querySelectorAll("[data-auth]").forEach(b=>b.addEventListener("click",()=>{authMode=b.dataset.auth;document.querySelectorAll("[data-auth]").forEach(x=>x.classList.toggle("active",x===b));$("authSubmit").textContent=authMode==="login"?"ورود":"ساخت حساب";$("authHint").textContent=authMode==="login"?"حساب کاربری را مدیر سامانه برای شما ایجاد می‌کند.":"ثبت‌نام فقط حساب اپراتور می‌سازد؛ مدیر باید دسترسی دستگاه را اختصاص دهد.";}));
   $("authForm").addEventListener("submit",async e=>{e.preventDefault();if(!configured){toast("برای ورود چندکاربره ابتدا Supabase را تنظیم کنید.");return;}const email=$("email").value,password=$("password").value;const result=authMode==="login"?await supabase.auth.signInWithPassword({email,password}):await supabase.auth.signUp({email,password});if(result.error)return toast(result.error.message);toast(authMode==="login"?"ورود موفق":"حساب ساخته شد؛ در صورت نیاز ایمیل را تأیید کنید.");});
   $("logoutBtn").addEventListener("click",async()=>{if(configured)await supabase.auth.signOut();user=null;profile=null;show("authView");});
-  $("reportForm").addEventListener("submit",e=>{e.preventDefault();local.reports.push({id:demoId(),date:$("reportDate").value,shift:$("reportShift").value,note:$("reportNote").value,closed:false});saveLocal();render();toast("گزارش روزانه ایجاد شد.");});
-  $("deviceForm").addEventListener("submit",e=>{e.preventDefault();local.devices.push({id:demoId(),name:$("deviceName").value,operator:$("deviceOperator").selectedOptions[0]?.text||"",operatorId:$("deviceOperator").value});saveLocal();e.target.reset();render();toast("دستگاه اضافه شد.");});
-  $("productForm").addEventListener("submit",e=>{e.preventDefault();local.products.push({id:demoId(),name:$("productName").value,unit:$("productUnit").value,weight:Number($("productWeight").value)});saveLocal();e.target.reset();render();toast("محصول اضافه شد.");});
-  $("materialForm").addEventListener("submit",e=>{e.preventDefault();local.materials.push({id:demoId(),name:$("materialName").value,unit:$("materialUnit").value});saveLocal();e.target.reset();render();toast("ماده اولیه اضافه شد.");});
+  $("reportForm").addEventListener("submit",async e=>{e.preventDefault();const {error}=await supabase.from("daily_reports").insert({report_date:$("reportDate").value,shift:$("reportShift").value,note:$("reportNote").value,created_by:user.id});if(await cloudError(error))return;e.target.reset();$("reportDate").value=todayJalali();await refreshCloud();toast("گزارش در پایگاه داده ثبت شد.");});
+  $("deviceForm").addEventListener("submit",async e=>{e.preventDefault();const {data,error}=await supabase.from("devices").insert({name:$("deviceName").value}).select().single();if(await cloudError(error))return;const op=$("deviceOperator").value;if(op){const {error:ae}=await supabase.from("device_assignments").insert({device_id:data.id,user_id:op,shift:$("deviceShift").value,active:true});if(await cloudError(ae))return;}e.target.reset();await refreshCloud();toast("دستگاه در فضای ابری ثبت شد.");});
+  $("productForm").addEventListener("submit",async e=>{e.preventDefault();const {error}=await supabase.from("products").insert({name:$("productName").value,default_unit:$("productUnit").value,default_unit_weight:Number($("productWeight").value)});if(await cloudError(error))return;e.target.reset();await refreshCloud();toast("محصول در فضای ابری ثبت شد.");});
+  $("materialForm").addEventListener("submit",async e=>{e.preventDefault();const {error}=await supabase.from("materials").insert({name:$("materialName").value,default_unit:$("materialUnit").value});if(await cloudError(error))return;e.target.reset();await refreshCloud();toast("ماده اولیه در فضای ابری ثبت شد.");});
+  $("usersList").addEventListener("change",async e=>{const id=e.target.dataset.roleUser;if(!id)return;const {error}=await supabase.from("profiles").update({role:e.target.value}).eq("id",id);if(await cloudError(error)){await refreshCloud();return;}await refreshCloud();toast("نقش کاربر تغییر کرد.");});
   $("productionProduct").addEventListener("change",()=>{const p=getProducts().find(x=>x.id===$("productionProduct").value);if(p){$("productionUnit").value=p.unit;$("productionWeight").value=p.weight;}});
   const calc=()=>{$("totalWeight").textContent=fa(Number($("productionQty").value||0)*Number($("productionWeight").value||0))+" کیلوگرم";};
   ["productionQty","productionWeight"].forEach(id=>$(id).addEventListener("input",calc));
@@ -71,7 +105,7 @@ function setupApp(){
   $("productionForm").addEventListener("submit",e=>{e.preventDefault();const p=getProducts().find(x=>x.id===$("productionProduct").value);if(!p)return toast("ابتدا محصول را انتخاب کنید.");local.productions.push({product:p.name,qty:Number($("productionQty").value),unit:$("productionUnit").value,weight:Number($("productionWeight").value),batch:$("batchNumber").value});saveLocal();e.target.reset();calc();render();toast("تولید ثبت شد.");});
   $("usageForm").addEventListener("submit",e=>{e.preventDefault();const m=getMaterials().find(x=>x.id===$("usageMaterial").value);if(!m)return toast("ماده اولیه را انتخاب کنید.");local.usages.push({material:m.name,qty:Number($("usageQty").value),unit:$("usageUnit").value,batch:$("usageBatch").value});saveLocal();e.target.reset();render();toast("مصرف مواد ثبت شد.");});
   $("downtimeForm").addEventListener("submit",e=>{e.preventDefault();const a=$("stopStart").value,b=$("stopEnd").value;if(!a||!b)return;let [ah,am]=a.split(":").map(Number),[bh,bm]=b.split(":").map(Number);let mins=bh*60+bm-(ah*60+am);if(mins<=0)mins+=1440;if(mins>1440)return toast("مدت توقف نامعتبر است.");const duration=`${Math.floor(mins/60)} ساعت و ${mins%60} دقیقه`;local.stops.push({reason:$("stopReason").value,duration,start:a,end:b});saveLocal();e.target.reset();$("stopDuration").textContent="—";render();toast("توقف ثبت شد.");});
-  document.addEventListener("click",e=>{const id=e.target.dataset.close;if(id){const r=local.reports.find(x=>x.id===id);r.closed=!r.closed;saveLocal();render();}});
+  document.addEventListener("click",async e=>{const id=e.target.dataset.close;if(id){const r=local.reports.find(x=>x.id===id);const {error}=await supabase.from("daily_reports").update({is_closed:!r.closed}).eq("id",id);if(await cloudError(error))return;await refreshCloud();toast("وضعیت گزارش به‌روزرسانی شد.");}});
 }
 function calcStop(){const a=$("stopStart").value,b=$("stopEnd").value;if(!a||!b){$("stopDuration").textContent="—";return;}let [ah,am]=a.split(":").map(Number),[bh,bm]=b.split(":").map(Number),m=bh*60+bm-(ah*60+am);if(m<=0)m+=1440;$("stopDuration").textContent=`${fa(Math.floor(m/60))} ساعت و ${fa(m%60)} دقیقه`;}
 async function loadProfile(session){
@@ -79,12 +113,12 @@ async function loadProfile(session){
   if(!configured)return;
   const {data,error}=await supabase.from("profiles").select("*").eq("id",user.id).single();
   if(error){toast("پروفایل کاربر هنوز آماده نیست.");profile={role:"operator",display_name:user.email};}else profile=data;
-  // نسخه نمایشی محلی نیست؛ داده‌های ابری در نسخه اتصال کامل از جداول خوانده می‌شوند.
-  show("appView");render();
+  show("appView");await refreshCloud();
 }
 setupApp();
 if(configured){
   supabase.auth.onAuthStateChange((_event,session)=>loadProfile(session));
+  supabase.channel("golfam-live").on("postgres_changes",{event:"*",schema:"public"},()=>refreshCloud()).subscribe();
   const {data}=await supabase.auth.getSession();await loadProfile(data.session);
 }else{
   $("authView").classList.add("hidden");$("appView").classList.remove("hidden");
